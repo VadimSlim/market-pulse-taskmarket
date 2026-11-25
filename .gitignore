@@ -1,0 +1,8 @@
+snapshot.json
+qa/
+__pycache__/
+*.tmp
+.env
+.env.*
+*.pem
+*.key
