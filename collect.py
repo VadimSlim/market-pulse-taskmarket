@@ -29,18 +29,35 @@ def task_history(chain):
         seen.add(cursor)
     return list(tasks.values()),complete
 
+def claim_metrics(tasks):
+    import statistics
+    durations=[]; reported=0; invalid=0
+    for task in tasks:
+        if not task.get('claimedAt'): continue
+        reported+=1
+        try:
+            start=datetime.datetime.fromisoformat(task['createdAt'].replace('Z','+00:00'))
+            end=datetime.datetime.fromisoformat(task['claimedAt'].replace('Z','+00:00'))
+            if start.tzinfo is None or end.tzinfo is None: raise ValueError('Missing timezone')
+            hours=(end-start).total_seconds()/3600
+            if hours<0: raise ValueError('Negative interval')
+            durations.append(hours)
+        except (ValueError,TypeError,KeyError,AttributeError): invalid+=1
+    durations.sort()
+    return {'valid_samples':len(durations),'reported_claims':reported,'invalid_samples':invalid,'total_tasks':len(tasks),'median_hours':round(statistics.median(durations),2) if durations else None,'p90_hours':round(durations[max(0,(9*len(durations)+9)//10-1)],2) if durations else None}
+
 def derive(tasks):
     weeks=collections.defaultdict(set); statuses=collections.Counter(); modes=collections.Counter(); posters=collections.Counter()
     for t in tasks:
         statuses[str(t.get('status','unknown'))]+=1
         modes[str(t.get('mode','unknown'))]+=1
         try:
-            dt=datetime.datetime.fromisoformat(t['createdAt'].replace('Z','+00:00')); week=(dt.date()-datetime.timedelta(days=dt.weekday())).isoformat()
+            dt=datetime.datetime.fromisoformat(t['createdAt'].replace('Z','+00:00')); week=(dt.astimezone(datetime.timezone.utc).date()-datetime.timedelta(days=dt.astimezone(datetime.timezone.utc).weekday())).isoformat()
         except (ValueError,KeyError,TypeError): continue
         addr=t.get('requester')
         if addr:
             weeks[week].add(addr.lower()); posters[addr.lower()]+=1
-    return {'weekly_posters':[{'week':w,'count':len(v)} for w,v in sorted(weeks.items())],'statuses':dict(statuses),'modes':dict(modes),'task_count':len(tasks),'unique_posters':len(posters),'top5_poster_tasks':sum(n for _,n in posters.most_common(5))}
+    return {'claim_latency':claim_metrics(tasks),'weekly_posters':[{'week':w,'count':len(v)} for w,v in sorted(weeks.items())],'statuses':dict(statuses),'modes':dict(modes),'task_count':len(tasks),'unique_posters':len(posters),'top5_poster_tasks':sum(n for _,n in posters.most_common(5))}
 
 def build():
     started=datetime.datetime.now(datetime.timezone.utc).isoformat(); result={'capture_started':started,'chains':{},'source':BASE,'schema_version':1}
